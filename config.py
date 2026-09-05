@@ -61,9 +61,7 @@ SOURCE_OANDA = "OANDA"
 SOURCE_FOREXCOM = "FOREXCOM"
 SOURCE_PEPPERSTONE = "PEPPERSTONE"
 SOURCE_FX_IDC = "FX_IDC"
-
-# Keep this neutral until the actual provider is verified.
-SOURCE_FX_COMPOSITE = "FX_COMPOSITE"
+SOURCE_FXCM = "FXCM"
 
 SOURCE_DUKASCOPY = "DUKASCOPY"
 
@@ -73,7 +71,7 @@ TRADINGVIEW_SOURCES = (
     SOURCE_FOREXCOM,
     SOURCE_PEPPERSTONE,
     SOURCE_FX_IDC,
-    SOURCE_FX_COMPOSITE,
+    SOURCE_FXCM,
 )
 
 
@@ -92,7 +90,7 @@ TRADINGVIEW_FILE_SOURCE_MAP = {
     "FOREXCOM_USDJPY, 1D.csv": SOURCE_FOREXCOM,
     "PEPPERSTONE_USDJPY, 1D.csv": SOURCE_PEPPERSTONE,
     "FX_IDC_USDJPY, 1D.csv": SOURCE_FX_IDC,
-    "FX_USDJPY, 1D.csv": SOURCE_FX_COMPOSITE,
+    "FX_USDJPY, 1D.csv": SOURCE_FXCM,
 }
 
 
@@ -125,7 +123,7 @@ SOURCE_REGISTRY = {
         "bar_origin": "NATIVE",
     },
 
-    SOURCE_FX_COMPOSITE: {
+    SOURCE_FXCM: {
         "source_group": "TRADINGVIEW",
         "raw_timeframe": "1D",
         "bar_origin": "NATIVE",
