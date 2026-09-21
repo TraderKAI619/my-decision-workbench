@@ -1,0 +1,16 @@
+version: 2
+
+sources:
+  - name: tradingview
+    database: my-decision-workbench
+    schema: raw_tradingview
+    tables:
+      - name: market_bars
+        description: Raw TradingView market bars loaded from source CSV exports.
+
+  - name: dukascopy
+    database: my-decision-workbench
+    schema: raw_dukascopy
+    tables:
+      - name: market_bars
+        description: Raw Dukascopy market bars loaded from source CSV exports.
