@@ -2,7 +2,13 @@
 
 with bars as (
 
-    select *
+    select
+        *,
+        timestamp_add(
+            bar_start_utc,
+            interval 4 hour
+        ) as bar_available_utc
+
     from {{ ref('int_dukascopy__canonical_h4') }}
 
 ),
