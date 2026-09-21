@@ -33,6 +33,14 @@ TABLE_MARKET_BARS_DUKASCOPY_1H = (
     "market_bars_dukascopy_1h"
 )
 
+TABLE_AGGREGATED_DUKASCOPY_4H = (
+    "aggregated_dukascopy_4h"
+)
+
+TABLE_MARKET_BARS_DUKASCOPY_4H = (
+    "market_bars_dukascopy_4h"
+)
+
 TABLE_PROVIDER_RECONCILIATION_DAILY = (
     "provider_reconciliation_daily"
 )
@@ -78,6 +86,28 @@ LOAD_SPECS = {
     TABLE_MARKET_BARS_DUKASCOPY_1H: {
         "group": "transformed",
         "dataset": "dukascopy_1h",
+        "grain": (
+            "bar_start_utc",
+            "source",
+            "symbol",
+            "timeframe",
+        ),
+    },
+
+    TABLE_AGGREGATED_DUKASCOPY_4H: {
+        "group": "aggregated",
+        "dataset": "dukascopy_4h",
+        "grain": (
+            "timestamp",
+            "source",
+            "symbol",
+            "timeframe",
+        ),
+    },
+
+    TABLE_MARKET_BARS_DUKASCOPY_4H: {
+        "group": "transformed",
+        "dataset": "dukascopy_4h",
         "grain": (
             "bar_start_utc",
             "source",
@@ -215,12 +245,14 @@ def validate_dukascopy_validated_grain(
 
 def validate_load_inputs(
     validated: dict[str, pd.DataFrame],
+    aggregated: dict[str, pd.DataFrame],
     transformed: dict[str, pd.DataFrame],
     reconciled: dict[str, pd.DataFrame],
 ) -> None:
 
     dataset_groups = {
         "validated": validated,
+        "aggregated": aggregated,
         "transformed": transformed,
         "reconciled": reconciled,
     }
@@ -485,6 +517,7 @@ def write_load_audit(
 
 def build_load_frames(
     validated: dict[str, pd.DataFrame],
+    aggregated: dict[str, pd.DataFrame],
     transformed: dict[str, pd.DataFrame],
     reconciled: dict[str, pd.DataFrame],
 ) -> dict[str, pd.DataFrame]:
@@ -500,6 +533,11 @@ def build_load_frames(
                 "dukascopy_1h"
             ],
 
+        TABLE_AGGREGATED_DUKASCOPY_4H:
+            aggregated[
+                "dukascopy_4h"
+            ],
+
         TABLE_MARKET_BARS_TRADINGVIEW_DAILY:
             transformed[
                 "tradingview_daily"
@@ -508,6 +546,11 @@ def build_load_frames(
         TABLE_MARKET_BARS_DUKASCOPY_1H:
             transformed[
                 "dukascopy_1h"
+            ],
+
+        TABLE_MARKET_BARS_DUKASCOPY_4H:
+            transformed[
+                "dukascopy_4h"
             ],
 
         TABLE_PROVIDER_RECONCILIATION_DAILY:
@@ -523,6 +566,7 @@ def build_load_frames(
 
 def load_all_to_duckdb(
     validated: dict[str, pd.DataFrame],
+    aggregated: dict[str, pd.DataFrame],
     transformed: dict[str, pd.DataFrame],
     reconciled: dict[str, pd.DataFrame],
 ) -> dict[str, int]:
@@ -536,12 +580,14 @@ def load_all_to_duckdb(
 
     validate_load_inputs(
         validated=validated,
+        aggregated=aggregated,
         transformed=transformed,
         reconciled=reconciled,
     )
 
     frames = build_load_frames(
         validated=validated,
+        aggregated=aggregated,
         transformed=transformed,
         reconciled=reconciled,
     )

@@ -4,12 +4,13 @@ import numpy as np
 import pandas as pd
 
 from config import (
+    SOURCE_DUKASCOPY,
     OHLC_COLUMNS,
     PIP_SIZE,
     TARGET_TIMEZONE,
     TIMEFRAME_1D,
-    TRADINGVIEW_ANALYTICAL_DATE_SHIFT_HOURS,
-)
+    TIMEFRAME_4H,
+    TRADINGVIEW_ANALYTICAL_DATE_SHIFT_HOURS,)
 
 from validate import select_trusted_rows
 
@@ -1277,27 +1278,272 @@ def transform_dukascopy_1h(
     ]
 
 
+
+
+def split_4h_on_incomplete_barriers(
+    df: pd.DataFrame,
+) -> list[pd.DataFrame]:
+    """
+    Split the full aggregated H4 timeline only at explicitly
+    observed incomplete H4 buckets.
+
+    Semantic contract
+    -----------------
+    - is_complete_4h_bucket=False is an explicit barrier.
+      Canonical previous-bar, streak, sequence, and 3-candle
+      imbalance features must not bridge across that row.
+
+    - A wall-clock gap with no aggregated H4 row is not by
+      itself a barrier. Such gaps commonly represent normal
+      market closures such as weekends.
+
+    - Incomplete H4 rows are used only as barriers and are
+      never emitted into canonical H4 market facts.
+    """
+    require_columns(
+        df,
+        [
+            "timestamp",
+            "source",
+            "symbol",
+            "timeframe",
+            "is_complete_4h_bucket",
+        ],
+        "split_4h_on_incomplete_barriers",
+    )
+
+    work = (
+        df.copy()
+        .sort_values(
+            [
+                "source",
+                "symbol",
+                "timestamp",
+            ]
+        )
+        .reset_index(drop=True)
+    )
+
+    work["is_complete_4h_bucket"] = (
+        work["is_complete_4h_bucket"]
+        .fillna(False)
+        .astype(bool)
+    )
+
+    segments: list[pd.DataFrame] = []
+
+    for _, series in work.groupby(
+        list(SERIES_KEYS),
+        sort=False,
+        dropna=False,
+    ):
+        series = (
+            series
+            .sort_values("timestamp")
+            .reset_index(drop=True)
+        )
+
+        # Every explicitly observed incomplete row creates
+        # a semantic barrier. Missing wall-clock slots do not.
+        segment_id = (
+            ~series["is_complete_4h_bucket"]
+        ).cumsum()
+
+        complete = series.loc[
+            series["is_complete_4h_bucket"]
+        ].copy()
+
+        if complete.empty:
+            continue
+
+        complete["_h4_segment_id"] = (
+            segment_id.loc[
+                complete.index
+            ].to_numpy()
+        )
+
+        for _, segment in complete.groupby(
+            "_h4_segment_id",
+            sort=False,
+        ):
+            segment = (
+                segment
+                .drop(
+                    columns=[
+                        "_h4_segment_id"
+                    ]
+                )
+                .reset_index(drop=True)
+            )
+
+            if not segment.empty:
+                segments.append(segment)
+
+    return segments
+
+
+# ============================================================
+# Dukascopy H4 — derived from trusted H1
+# ============================================================
+
+
+def transform_dukascopy_4h(
+    df: pd.DataFrame,
+    pip_size: float = PIP_SIZE,
+) -> pd.DataFrame:
+    """
+    Transform the full aggregated Dukascopy H4 timeline into
+    canonical H4 market facts.
+
+    The full aggregate timeline is required because explicitly
+    observed incomplete H4 buckets carry semantic information:
+    they are barriers across which previous-bar, streak,
+    sequence, and 3-candle imbalance features must not bridge.
+
+    Zero-observation market-closure gaps are not automatically
+    barriers.
+
+    Only complete H4 buckets are emitted into canonical facts.
+    """
+    if df.empty:
+        return pd.DataFrame(
+            columns=CORE_COLUMNS
+        )
+
+    require_columns(
+        df,
+        [
+            "timestamp",
+            "source",
+            "symbol",
+            "timeframe",
+            "open",
+            "high",
+            "low",
+            "close",
+            "is_complete_4h_bucket",
+        ],
+        "transform_dukascopy_4h",
+    )
+
+    if not (
+        df["source"]
+        == SOURCE_DUKASCOPY
+    ).all():
+        raise ValueError(
+            "transform_dukascopy_4h requires "
+            "Dukascopy rows only."
+        )
+
+    if not (
+        df["timeframe"]
+        == TIMEFRAME_4H
+    ).all():
+        raise ValueError(
+            "transform_dukascopy_4h requires "
+            "4H rows only."
+        )
+
+    segments = (
+        split_4h_on_incomplete_barriers(
+            df
+        )
+    )
+
+    transformed_parts = []
+
+    for segment in segments:
+        transformed_parts.append(
+            transform_one_series(
+                segment,
+                pip_size=pip_size,
+            )
+        )
+
+    if not transformed_parts:
+        return pd.DataFrame(
+            columns=CORE_COLUMNS
+        )
+
+    result = (
+        pd.concat(
+            transformed_parts,
+            ignore_index=True,
+        )
+        .sort_values(
+            [
+                "source",
+                "symbol",
+                "bar_start_utc",
+            ]
+        )
+        .reset_index(drop=True)
+    )
+
+    if len(result) != int(
+        df[
+            "is_complete_4h_bucket"
+        ]
+        .fillna(False)
+        .astype(bool)
+        .sum()
+    ):
+        raise AssertionError(
+            "Canonical H4 row count must equal "
+            "the number of complete aggregated H4 buckets."
+        )
+
+    return result[
+        CORE_COLUMNS
+    ]
+
+
 # ============================================================
 # Full transformation
 # ============================================================
 
+
 def transform_all(
     validated: dict[str, pd.DataFrame],
+    aggregated: dict[str, pd.DataFrame],
 ) -> dict[str, pd.DataFrame]:
-    required_datasets = {
+    """
+    Transform validated / aggregated datasets into canonical
+    market-fact datasets.
+
+    Dukascopy H4 receives the full aggregated timeline so that
+    explicitly observed incomplete buckets remain available as
+    semantic barriers during H4 feature construction.
+    """
+    required_validated = {
         "tradingview_daily",
         "dukascopy_1h",
     }
 
-    missing = (
-        required_datasets
+    missing_validated = (
+        required_validated
         - set(validated)
     )
 
-    if missing:
+    if missing_validated:
         raise KeyError(
             f"Missing validated datasets: "
-            f"{sorted(missing)}"
+            f"{sorted(missing_validated)}"
+        )
+
+    required_aggregated = {
+        "dukascopy_4h",
+    }
+
+    missing_aggregated = (
+        required_aggregated
+        - set(aggregated)
+    )
+
+    if missing_aggregated:
+        raise KeyError(
+            f"Missing aggregated datasets: "
+            f"{sorted(missing_aggregated)}"
         )
 
     return {
@@ -1312,6 +1558,13 @@ def transform_all(
             transform_dukascopy_1h(
                 validated[
                     "dukascopy_1h"
+                ]
+            ),
+
+        "dukascopy_4h":
+            transform_dukascopy_4h(
+                aggregated[
+                    "dukascopy_4h"
                 ]
             ),
     }
@@ -1376,6 +1629,7 @@ if __name__ == "__main__":
 
     from ingest import ingest_all
     from validate import validate_all
+    from aggregate import aggregate_all
 
     raw = ingest_all()
 
@@ -1383,8 +1637,13 @@ if __name__ == "__main__":
         raw
     )
 
-    transformed = transform_all(
+    aggregated = aggregate_all(
         validated
+    )
+
+    transformed = transform_all(
+        validated,
+        aggregated,
     )
 
     for name, df in transformed.items():

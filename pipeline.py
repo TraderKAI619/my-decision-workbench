@@ -14,6 +14,7 @@ from config import (
 
 from ingest import ingest_all
 from validate import validate_all
+from aggregate import aggregate_all
 from transform import transform_all
 from reconcile import reconcile_all
 from load_duckdb import (
@@ -238,6 +239,7 @@ def summarize_load(
 
 def verify_pipeline_consistency(
     validated: dict[str, pd.DataFrame],
+    aggregated: dict[str, pd.DataFrame],
     transformed: dict[str, pd.DataFrame],
     reconciled: dict[str, pd.DataFrame],
     load_result: dict[str, int],
@@ -324,6 +326,40 @@ def verify_pipeline_consistency(
         )
 
     # --------------------------------------------------------
+    # Dukascopy 4H
+    # --------------------------------------------------------
+
+    aggregated_duka_4h = (
+        aggregated[
+            "dukascopy_4h"
+        ]
+    )
+
+    transformed_duka_4h = (
+        transformed[
+            "dukascopy_4h"
+        ]
+    )
+
+    expected_complete_4h_rows = int(
+        aggregated_duka_4h[
+            "is_complete_4h_bucket"
+        ]
+        .fillna(False)
+        .astype(bool)
+        .sum()
+    )
+
+    if len(
+        transformed_duka_4h
+    ) != expected_complete_4h_rows:
+        raise RuntimeError(
+            "Dukascopy 4H complete-row mismatch: "
+            f"expected={expected_complete_4h_rows:,}, "
+            f"transformed={len(transformed_duka_4h):,}"
+        )
+
+    # --------------------------------------------------------
     # Reconciliation
     # --------------------------------------------------------
 
@@ -354,6 +390,12 @@ def verify_pipeline_consistency(
 
         "market_bars_dukascopy_1h":
             len(transformed_duka),
+
+        "aggregated_dukascopy_4h":
+            len(aggregated_duka_4h),
+
+        "market_bars_dukascopy_4h":
+            len(transformed_duka_4h),
 
         "provider_reconciliation_daily":
             len(reconciled_tv),
@@ -389,6 +431,11 @@ def verify_pipeline_consistency(
 
     print(
         "Dukascopy eligible "
+        "→ transformed: PASS"
+    )
+
+    print(
+        "Dukascopy complete 4H "
         "→ transformed: PASS"
     )
 
@@ -582,6 +629,21 @@ def run_pipeline() -> dict[str, Any]:
     )
 
     # --------------------------------------------------------
+    # Aggregate
+    # --------------------------------------------------------
+
+    aggregated, aggregate_stage = (
+        run_stage(
+            "AGGREGATE",
+            aggregate_all,
+            validated,
+            summary_builder=(
+                summarize_dataset_group
+            ),
+        )
+    )
+
+    # --------------------------------------------------------
     # Transform
     # --------------------------------------------------------
 
@@ -590,6 +652,7 @@ def run_pipeline() -> dict[str, Any]:
             "TRANSFORM",
             transform_all,
             validated,
+            aggregated,
             summary_builder=(
                 summarize_transform
             ),
@@ -620,6 +683,7 @@ def run_pipeline() -> dict[str, Any]:
             "LOAD DUCKDB",
             load_all_to_duckdb,
             validated,
+            aggregated,
             transformed,
             reconciled,
             summary_builder=(
@@ -634,6 +698,7 @@ def run_pipeline() -> dict[str, Any]:
 
     verify_pipeline_consistency(
         validated=validated,
+        aggregated=aggregated,
         transformed=transformed,
         reconciled=reconciled,
         load_result=load_result,
@@ -666,6 +731,7 @@ def run_pipeline() -> dict[str, Any]:
         config_stage,
         ingest_stage,
         validate_stage,
+        aggregate_stage,
         transform_stage,
         reconcile_stage,
         load_stage,
@@ -728,8 +794,18 @@ def run_pipeline() -> dict[str, Any]:
     )
 
     print(
-        f"Dukascopy analytical: "
+        f"Dukascopy 1H analytical: "
         f"{len(transformed['dukascopy_1h']):,}"
+    )
+
+    print(
+        f"Dukascopy 4H aggregated: "
+        f"{len(aggregated['dukascopy_4h']):,}"
+    )
+
+    print(
+        f"Dukascopy 4H analytical: "
+        f"{len(transformed['dukascopy_4h']):,}"
     )
 
     print(
@@ -752,6 +828,9 @@ def run_pipeline() -> dict[str, Any]:
 
         "validated":
             validated,
+
+        "aggregated":
+            aggregated,
 
         "transformed":
             transformed,

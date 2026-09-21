@@ -205,6 +205,14 @@ TRADINGVIEW_ANALYTICAL_DATE_SHIFT_HOURS = 3
 
 TIMEFRAME_1H = "1H"
 TIMEFRAME_4H = "4H"
+
+# Dukascopy H1 -> H4 production boundary.
+#
+# Calibrated against the documented decision-time TradingView
+# H4 chart for the USDJPY case study.
+#
+# offset=1 -> 01/05/09/13/17/21 UTC
+DUKASCOPY_4H_BOUNDARY_OFFSET_HOURS = 1
 TIMEFRAME_1D = "1D"
 TIMEFRAME_1W = "1W"
 TIMEFRAME_1M = "1M"
