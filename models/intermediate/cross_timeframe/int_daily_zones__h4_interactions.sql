@@ -148,7 +148,8 @@ with_transitions as (
                 zone_timeframe,
                 zone_formed_date,
                 reaction_source,
-                reaction_timeframe
+                reaction_timeframe,
+                segment_id
             order by bar_start_utc
         ) as previous_close_location
 
